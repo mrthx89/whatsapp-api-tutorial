@@ -3,9 +3,7 @@ whatsapp-session*.json
 package-lock.json
 downloaded-media/
 .wwebjs_auth
-.wwebjs_auth
 .wwebjs_cache
-.env
 iisnode
 npm-debug.log
 .git
