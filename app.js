@@ -6,16 +6,51 @@ const qrcode = require("qrcode");
 const http = require("http");
 const fs = require("fs");
 const { phoneNumberFormatter } = require("./helpers/formatter");
-const fileUpload = require("express-fileupload");
 const axios = require("axios");
 const mime = require("mime-types");
+const path = require("path");
+const multer = require("multer");
+const { v4: uuidv4 } = require("uuid");
+
+const filesPayloadExists = require("./middleware/filesPayloadsExists");
+const fileExtLimiter = require("./middleware/fileExtLimiter");
+const fileSizeLimiter = require("./middleware/fileSizeLimiter");
+const vpointAPI = require("./repository/vpointdata");
 
 const port = process.env.PORT || 9000;
 
 const app = express();
 const server = http.createServer(app);
-const io = socketIO(server);
+const io = socketIO(server, {
+  allowEIO3: true, // false by default
+});
+// menentukan lokasi pengunggahan
+const diskStorage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    cb(null, path.join(__dirname, "uploads"));
+  },
+  filename: function (req, file, cb) {
+    const guid = uuidv4();
+    cb(
+      null,
+      formatDate(Date.now()) + "_" + guid + path.extname(file.originalname)
+    );
+  },
+});
 
+function formatDate(date) {
+  // Konversi string menjadi objek Date
+  const currentDate = new Date(date);
+
+  const year = currentDate.getFullYear();
+  const month = String(currentDate.getMonth() + 1).padStart(2, "0");
+  const day = String(currentDate.getMonth()).padStart(2, "0");
+  const hours = String(currentDate.getHours()).padStart(2, "0");
+  const minutes = String(currentDate.getMinutes()).padStart(2, "0");
+  const seconds = String(currentDate.getSeconds()).padStart(2, "0");
+
+  return `${year}${month}${day}${hours}${minutes}${seconds}`;
+}
 app.use(express.json());
 app.use(
   express.urlencoded({
@@ -30,12 +65,11 @@ app.use(
  * Many people confused about the warning for file-upload
  * So, we just disabling the debug for simplicity.
  */
-
-app.use(
-  fileUpload({
-    debug: false,
-  })
-);
+// app.use(
+//   fileUpload({
+//     debug: false,
+//   })
+// );
 
 app.get("/", (req, res) => {
   res.sendFile("index.html", {
@@ -44,6 +78,11 @@ app.get("/", (req, res) => {
 });
 
 const client = new Client({
+  webVersionCache: {
+    type: "remote",
+    remotePath:
+      "https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/2.2412.54.html",
+  },
   restartOnAuthFail: true,
   puppeteer: {
     headless: true,
@@ -61,27 +100,73 @@ const client = new Client({
   authStrategy: new LocalAuth(),
 });
 
+client.initialize();
+
 client.on("message", (msg) => {
   if (msg.body == "!ping") {
     msg.reply("pong");
-  } else if (msg.body == "good morning") {
-    msg.reply("selamat pagi");
-  } else if (msg.body == "!groups") {
-    client.getChats().then((chats) => {
-      const groups = chats.filter((chat) => chat.isGroup);
+    // } else if (msg.body == "good morning") {
+    //   msg.reply("selamat pagi");
+    // } else if (msg.body == "good afternoon" || msg.body == "good sore") {
+    //   msg.reply("selamat siang");
+    // } else if (msg.body == "good evening" || msg.body == "good night") {
+    //   msg.reply("selamat malam");
+  } else if (
+    msg.body.toLowerCase() == "cek poin" ||
+    msg.body.toLowerCase() == "info poin" ||
+    msg.body.toLowerCase() == "check point" ||
+    msg.body.toLowerCase() == "info point"
+  ) {
+    var result = vpointAPI.saldoPoin(msg);
+    msg.reply(result);
+  } else if (
+    msg.body.toLowerCase() == "histori poin" ||
+    msg.body.toLowerCase() == "history point"
+  ) {
+    var result = vpointAPI.historyPoin(msg);
+    msg.reply(result);
+  } else if (msg.body.toLowerCase() == "info promo") {
+    var result = vpointAPI.infoPromo(msg);
+    msg.reply(result);
+    // } else if (msg.body == "!groups") {
+    //   client.getChats().then((chats) => {
+    //     const groups = chats.filter((chat) => chat.isGroup);
 
-      if (groups.length == 0) {
-        msg.reply("You have no group yet.");
-      } else {
-        let replyMsg = "*YOUR GROUPS*\n\n";
-        groups.forEach((group, i) => {
-          replyMsg += `ID: ${group.id._serialized}\nName: ${group.name}\n\n`;
-        });
-        replyMsg +=
-          "_You can use the group id to send a message to the group._";
-        msg.reply(replyMsg);
-      }
-    });
+    //     if (groups.length == 0) {
+    //       msg.reply("You have no group yet.");
+    //     } else {
+    //       let replyMsg = "*YOUR GROUPS*\n\n";
+    //       groups.forEach((group, i) => {
+    //         replyMsg += `ID: ${group.id._serialized}\nName: ${group.name}\n\n`;
+    //       });
+    //       replyMsg +=
+    //         "_You can use the group id to send a message to the group._";
+    //       msg.reply(replyMsg);
+    //     }
+    //   });
+  } else {
+    let replyMsg =
+      "Selamat datang di *VPoint Mart*\nBelanja Murah belanja Mudah dan dapatkan keutamaan menjadi Member";
+    client.sendMessage(msg.from, replyMsg);
+
+    let button = new Buttons(
+      "Button body",
+      [{ body: "bt1" }, { body: "bt2" }, { body: "bt3" }],
+      "title",
+      "footer"
+    );
+    client.sendMessage(msg.from, button);
+    let sections = [
+      {
+        title: "sectionTitle",
+        rows: [
+          { title: "ListItem1", description: "desc" },
+          { title: "ListItem2" },
+        ],
+      },
+    ];
+    let list = new List("List body", "btnText", sections, "Title", "footer");
+    client.sendMessage(msg.from, list);
   }
 
   // NOTE!
@@ -123,8 +208,6 @@ client.on("message", (msg) => {
   //   });
   // }
 });
-
-client.initialize();
 
 // Socket IO
 io.on("connection", function (socket) {
@@ -207,6 +290,65 @@ app.post(
           response: err,
         });
       });
+  }
+);
+
+// Send media upload
+app.post(
+  "/send-media-upload",
+  multer({ storage: diskStorage }).single("file"),
+  async (req, res) => {
+    try {
+      const number = phoneNumberFormatter(req.body.number);
+      const caption = req.body.caption;
+      const file = req.file; // File yang diunggah
+
+      if (!file) {
+        return res.status(400).json({
+          status: false,
+          message: "No file uploaded",
+        });
+      }
+
+      console.log("Number : " + number);
+      console.log("Caption : " + caption);
+      console.log("Filename : " + file.path);
+      console.log("Original Name : " + file.originalname);
+
+      const media = MessageMedia.fromFilePath(file.path);
+      // const media = new MessageMedia(
+      //   file.mimetype,
+      //   fs.readFileSync(file.path),
+      //   file.originalname
+      // );
+      console.log("Media MimeType : " + media.mimetype);
+      client
+        .sendMessage(number, media, {
+          caption: caption,
+        })
+        .then((response) => {
+          // Hapus file yang diunggah setelah berhasil dikirim
+          fs.unlinkSync(file.path);
+          res.status(200).json({
+            status: true,
+            response: response,
+          });
+        })
+        .catch((err) => {
+          // Hapus file yang diunggah setelah berhasil dikirim
+          fs.unlinkSync(file.path);
+          res.status(500).json({
+            status: false,
+            response: err,
+            message: "Failed Send Media!",
+          });
+        });
+    } catch (err) {
+      return res.status(500).json({
+        status: false,
+        response: err,
+      });
+    }
   }
 );
 

@@ -41,7 +41,7 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Set environment variables for configuration and defaults
-ENV APP_PORT=8000
+ENV APP_PORT=9000
 ENV APP_ENV=production
 
 # Set direktori kerja di dalam container
@@ -57,7 +57,7 @@ RUN npm install
 COPY . .
 
 # Port yang digunakan oleh aplikasi
-EXPOSE 8000
+EXPOSE 9000
 
 # Perintah untuk menjalankan aplikasi saat container dimulai
 CMD ["npm", "start"]
